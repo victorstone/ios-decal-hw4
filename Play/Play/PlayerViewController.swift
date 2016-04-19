@@ -24,6 +24,12 @@ class PlayerViewController: UIViewController {
     var artistLabel: UILabel!
     var titleLabel: UILabel!
     
+    var path: String!
+    var clientID: String!
+    
+    var playing: Bool!
+    var newSong : Bool!
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         view = UIView(frame: UIScreen.mainScreen().bounds)
@@ -37,6 +43,12 @@ class PlayerViewController: UIViewController {
         
         loadVisualElements()
         loadPlayerButtons()
+        
+        path = NSBundle.mainBundle().pathForResource("Info", ofType: "plist")
+        clientID = NSDictionary(contentsOfFile: path!)?.valueForKey("client_id") as! String
+        playing = false
+        newSong = true
+
     }
     
     func loadVisualElements() {
@@ -125,11 +137,35 @@ class PlayerViewController: UIViewController {
      *  property accordingly.
      */
     func playOrPauseTrack(sender: UIButton) {
-        let path = NSBundle.mainBundle().pathForResource("Info", ofType: "plist")
-        let clientID = NSDictionary(contentsOfFile: path!)?.valueForKey("client_id") as! String
+        //let path = NSBundle.mainBundle().pathForResource("Info", ofType: "plist")
+        //let clientID = NSDictionary(contentsOfFile: path!)?.valueForKey("client_id") as! String
         let track = tracks[currentIndex]
         let url = NSURL(string: "https://api.soundcloud.com/tracks/\(track.id)/stream?client_id=\(clientID)")!
         // FILL ME IN
+        if !sender.selected {
+            playing = true
+        } else {
+            playing = false
+        }
+        if playing! {
+            if newSong! {
+                print("hi")
+                let song = AVPlayerItem(URL: url)
+                player.replaceCurrentItemWithPlayerItem(song)
+                if player.currentItem!.status == .ReadyToPlay {
+                    player.play()
+                }
+                newSong = false
+            } else {
+                print("replay")
+                if player.currentItem!.status == .ReadyToPlay {
+                    player.play()
+                }
+            }
+        } else {
+            player.pause()
+        }
+        sender.selected = !sender.selected
     
     }
     
@@ -140,7 +176,24 @@ class PlayerViewController: UIViewController {
      * Remember to update the currentIndex
      */
     func nextTrackTapped(sender: UIButton) {
-    
+        if (currentIndex == tracks.count) {
+            return
+        } else {
+            currentIndex! += 1
+            loadTrackElements()
+            let newTrack = tracks[currentIndex]
+            let url = NSURL(string: "https://api.soundcloud.com/tracks/\(newTrack.id)/stream?client_id=\(clientID)")
+            let song = AVPlayerItem(URL: url!)
+            player.replaceCurrentItemWithPlayerItem(song)
+            if playing! {
+                if player.currentItem!.status == .ReadyToPlay {
+                    player.play()
+                }
+                newSong = false
+            } else {
+                newSong = true
+            }
+        }
     }
 
     /*
@@ -154,30 +207,65 @@ class PlayerViewController: UIViewController {
      */
 
     func previousTrackTapped(sender: UIButton) {
-    
+        if (currentIndex == 0) {
+            return
+        } else {
+            if CMTimeCompare(player.currentTime(), CMTimeMakeWithSeconds(3, 1)) <= 0 {
+                currentIndex! -= 1
+                loadTrackElements()
+                let newTrack = tracks[currentIndex]
+                let url = NSURL(string: "https://api.soundcloud.com/tracks/\(newTrack.id)/stream?client_id=\(clientID)")
+                let song = AVPlayerItem(URL: url!)
+                player.replaceCurrentItemWithPlayerItem(song)
+                if playing! {
+                    if player.currentItem!.status == .ReadyToPlay {
+                        player.play()
+                    }
+                    newSong = false
+                } else {
+                    newSong = true
+                }
+            } else {
+                /* ask question here */
+                player.seekToTime(CMTimeMakeWithSeconds(0, 1))
+                newSong = false
+            }
+        }
     }
     
+    var artworkCache = NSCache()
     
     func asyncLoadTrackImage(track: Track) {
-        let url = NSURL(string: track.artworkURL)
-        let session = NSURLSession.sharedSession()
-        let task = session.dataTaskWithURL(url!) {
-            (data: NSData?, response: NSURLResponse?, error: NSError?) -> Void in
-            if error == nil {
-                let image = UIImage(data: data!)
-                let priority = DISPATCH_QUEUE_PRIORITY_DEFAULT
-                dispatch_async(dispatch_get_global_queue(priority, 0)) {
-                    dispatch_async(dispatch_get_main_queue()) {
-                        self.trackImageView.image = image
+        if let image = self.artworkCache.objectForKey(track.id) {
+            self.trackImageView.image = image as? UIImage
+        } else {
+            let url = NSURL(string: track.artworkURL)
+            let session = NSURLSession.sharedSession()
+            let task = session.dataTaskWithURL(url!) {
+                (data: NSData?, response: NSURLResponse?, error: NSError?) -> Void in
+                if error == nil {
+                    let image = UIImage(data: data!)
+                    let priority = DISPATCH_QUEUE_PRIORITY_DEFAULT
+                    dispatch_async(dispatch_get_global_queue(priority, 0)) {
+                        dispatch_async(dispatch_get_main_queue()) {
+                            self.trackImageView.image = image
+                            self.artworkCache.setObject(image!, forKey: track.id)
+                        }
                     }
                 }
             }
+            task.resume()
         }
-        task.resume()
     }
     
     func didLoadTracks(tracks: [Track]) {
-        self.tracks = tracks
+//        self.tracks = tracks
+        //Because I don't like the first song...
+        var tempTracks = [Track]()
+        for i in 1..<tracks.count {
+            tempTracks.append(tracks[i])
+        }
+        self.tracks = tempTracks
         loadTrackElements()
     }
 }
